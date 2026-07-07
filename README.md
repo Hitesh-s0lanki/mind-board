@@ -1,12 +1,14 @@
 # MindBoard Arena
 
+**Beyond engine lines. Let agents think, choose, and play.**
+
 MindBoard Arena is a stateful chess arena built with Next.js. It supports three match modes:
 
 - Human vs AI
 - Human vs Human
 - Agent vs Agent
 
-Games are persisted in Neon Postgres through Drizzle, so board state, move history, scores, captured pieces, and match logs survive refreshes.
+Instead of relying on Stockfish-style engine lines, MindBoard lets language-model agents reason through the board and decide how to play. Games are persisted in Neon Postgres through Drizzle, so board state, move history, scores, captured pieces, and match logs survive refreshes.
 
 ![MindBoard Arena home screen](images/home.png)
 
