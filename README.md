@@ -1,36 +1,102 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MindBoard Arena
+
+MindBoard Arena is a Next.js chess arena where a human player can challenge an LLM-powered opponent. The app pairs a polished marketing landing page with a playable chess board, legal move validation, move history, game persistence, and an agent route that can request structured chess moves from OpenAI models.
+
+## Features
+
+- Marketing homepage for the Human vs LLM chess experience.
+- Local chess board with legal move validation powered by `chess.js`.
+- Game pages with shareable ids at `/game/[id]`.
+- API routes for loading game state and advancing turns.
+- SQLite-backed game/message persistence using Node's built-in SQLite support.
+- LangChain/OpenAI chess agent with structured move output.
+- Optional Python LangChain CLI entrypoint for quick agent experiments.
+
+## Tech Stack
+
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Tailwind CSS 4
+- LangChain and `@langchain/openai`
+- `chess.js`
+- Python 3.13 helper entrypoint with `uv`
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies:
+
+```bash
+npm install
+```
+
+Create a local environment file:
+
+```bash
+cp .env.example .env.local
+```
+
+Then add your OpenAI API key to `.env.local`.
+
+Run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3001](http://localhost:3001).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev     # Start Next.js on port 3001
+npm run build   # Create a production build
+npm run start   # Serve the production build on port 3001
+npm run lint    # Run ESLint
+```
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```text
+src/app/                         App Router pages and API routes
+src/app/api/games/[id]/          Game state and turn endpoints
+src/app/game/                    Game route entrypoints
+src/features/chess/agents/       LLM chess agent prompts and schemas
+src/features/chess/components/   Landing page and chess game UI
+src/features/chess/game/         Board, validation, persistence, and types
+public/chess-pieces/             Chess piece image assets
+public/llm-icons/                Model family logo assets
+ai/                              Optional Python LangChain CLI agent
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment Variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Variable | Required | Description |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | Yes for LLM moves | OpenAI API key used by the chess agent. |
+| `CHESS_AGENT_MODEL` | No | Model for the Next.js chess agent. Defaults to `gpt-4o-mini`. |
+| `MIND_BOARD_AGENT_MODEL` | No | Model for the optional Python CLI agent. Defaults to `openai:gpt-4.1-mini`. |
 
-## Deploy on Vercel
+Do not commit `.env`, `.env.local`, API keys, or generated game logs.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Optional Python Agent
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The Python helper uses Python 3.13 and `uv`.
+
+```bash
+uv sync
+uv run python main.py "Count the words in this sentence"
+```
+
+It reads `OPENAI_API_KEY` from `.env` or the shell environment.
+
+## Production
+
+Build and start the app:
+
+```bash
+npm run build
+npm run start
+```
+
+The production server also listens on [http://localhost:3001](http://localhost:3001).

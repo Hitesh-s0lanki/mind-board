@@ -29,9 +29,19 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+__pycache__/
+*.py[cod]
+
+# local game logs
+/logs/
+/data/
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# local agent tooling
+.agent/
 
 # vercel
 .vercel
@@ -39,3 +49,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.venv
