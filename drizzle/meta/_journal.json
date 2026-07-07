@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783433014378,
+      "tag": "0000_ambiguous_the_renegades",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783434985306,
+      "tag": "0001_agent_vs_agent",
+      "breakpoints": true
+    }
+  ]
+}

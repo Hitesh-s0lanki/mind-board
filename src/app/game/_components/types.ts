@@ -1,5 +1,8 @@
 import type { Color, PieceSymbol, Square } from "chess.js";
-import type { ChatMessageRecord } from "@/features/chess/game/db";
+import type {
+  ChatMessageRecord,
+  StoredMoveInput,
+} from "@/features/chess/game/db";
 
 export type CapturedPiece = {
   by: Color;
@@ -12,6 +15,8 @@ export type PendingPromotion = {
   to: Square;
   color: Color;
 };
+
+export type ReplayMoveInput = StoredMoveInput;
 
 export type TurnResponse = {
   success: boolean;
@@ -41,6 +46,8 @@ export type PlayerNames = {
   white: string;
   black: string;
 };
+
+export type GameMode = "human-vs-agent" | "agent-vs-agent" | "human-vs-human";
 
 export type AgentProvider =
   | "openai"
