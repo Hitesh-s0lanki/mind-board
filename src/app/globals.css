@@ -3,11 +3,48 @@
 :root {
   --background: #101513;
   --foreground: #f6f3e8;
+  --card: #17251f;
+  --card-foreground: #f6f3e8;
+  --popover: #101513;
+  --popover-foreground: #f6f3e8;
+  --primary: #9df6cf;
+  --primary-foreground: #101513;
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #d7e3dc;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: #879b90;
+  --accent: rgba(157, 246, 207, 0.12);
+  --accent-foreground: #f6f3e8;
+  --destructive: #e07a5f;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #9df6cf;
+  --radius: 0.5rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -27,12 +64,6 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
-button {
-  border: 0;
-  font: inherit;
-  padding: 0;
-}
-
 ::selection {
   background: #9df6cf;
   color: #101513;
@@ -50,6 +81,17 @@ button {
   animation: mb-scan 3.8s ease-in-out infinite;
 }
 
+.mb-model-mark {
+  animation: mb-model-mark 4.8s ease-in-out infinite;
+  animation-delay: var(--model-delay);
+}
+
+.mb-model-ring {
+  animation: mb-model-ring 2.8s ease-out infinite;
+  animation-delay: var(--model-delay);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--model-accent) 34%, transparent);
+}
+
 @keyframes mb-rise {
   from {
     opacity: 0;
@@ -59,6 +101,30 @@ button {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes mb-model-mark {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, -7px, 0);
+  }
+}
+
+@keyframes mb-model-ring {
+  0% {
+    opacity: 0.48;
+    transform: scale(0.82);
+  }
+
+  68%,
+  100% {
+    opacity: 0;
+    transform: scale(1.26);
   }
 }
 

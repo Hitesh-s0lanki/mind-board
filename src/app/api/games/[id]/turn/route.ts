@@ -1,4 +1,4 @@
-import { Chess, type Square } from "chess.js";
+import { Chess, type Color, type Square } from "chess.js";
 import { NextResponse } from "next/server";
 import { getChessAgentMove } from "@/features/chess/agents/chess-agent";
 import { boardFromGame, formatGameBoard, pieceCode } from "@/features/chess/game/board";
@@ -13,11 +13,27 @@ import { findMatchingLegalMove, legalMovesForGame } from "@/features/chess/game/
 
 export const runtime = "nodejs";
 
+const MAX_AGENT_MOVE_ATTEMPTS = 6;
+
 type TurnRequest = {
+  agentProvider?: string;
+  humanSide?: "white" | "black";
   message?: string;
   whiteName?: string;
   blackName?: string;
 };
+
+function sideToColor(side: "white" | "black"): Color {
+  return side === "white" ? "w" : "b";
+}
+
+function colorToSide(color: Color) {
+  return color === "w" ? "white" : "black";
+}
+
+function colorLabel(color: Color) {
+  return color === "w" ? "White" : "Black";
+}
 
 function gameStatus(game: Chess) {
   if (game.isGameOver()) {
@@ -32,23 +48,32 @@ function validationFeedbackForAgentMove(game: Chess, move: {
   to: string;
   piece: string;
   move: string;
-}) {
+}, agentColor: Color) {
   const piece = game.get(move.from as Square);
+  const agentLabel = colorLabel(agentColor);
 
   if (!piece) {
-    return `The move ${move.move} is invalid because ${move.from} is empty. Choose a black piece that exists on the current board.`;
+    return `The move ${move.move} is invalid because ${move.from} is empty. Choose a ${agentLabel} piece that exists on the current board.`;
   }
 
   const actualPiece = pieceCode(piece.color, piece.type);
-  if (piece.color !== "b") {
-    return `The move ${move.move} is invalid because ${move.from} contains ${actualPiece}, which belongs to White. It is Black's turn.`;
+  if (piece.color !== agentColor) {
+    return `The move ${move.move} is invalid because ${move.from} contains ${actualPiece}, which belongs to ${colorLabel(piece.color)}. It is ${agentLabel}'s turn.`;
   }
 
   if (actualPiece !== move.piece) {
     return `The move ${move.move} is invalid because ${move.from} contains ${actualPiece}, not ${move.piece}.`;
   }
 
-  return `The move ${move.move} is invalid under chess rules from the current board. Choose a different Black move.`;
+  return `The move ${move.move} is invalid under chess rules from the current board. Choose a different ${agentLabel} move.`;
+}
+
+function legalMoveOptionsForFeedback(
+  legalMoves: ReturnType<typeof legalMovesForGame>,
+) {
+  return legalMoves
+    .map((move) => `${move.move} (${move.piece}, SAN: ${move.san})`)
+    .join(", ");
 }
 
 export async function POST(
@@ -59,10 +84,13 @@ export async function POST(
     const { id } = await params;
     const body = (await request.json()) as TurnRequest;
     const humanText = body.message?.trim();
+    const humanSide = body.humanSide ?? "white";
+    const humanColor = sideToColor(humanSide);
+    const agentColor = humanColor === "w" ? "b" : "w";
 
-    if (!humanText) {
+    if (body.humanSide && body.humanSide !== "white" && body.humanSide !== "black") {
       return NextResponse.json(
-        { success: false, error: "Missing human message." },
+        { success: false, error: "Invalid human side." },
         { status: 400 },
       );
     }
@@ -80,42 +108,53 @@ export async function POST(
       );
     }
 
-    if (game.turn() !== "w") {
-      return NextResponse.json(
-        { success: false, error: "It is not the human player's turn." },
-        { status: 400 },
-      );
-    }
+    let humanMove = null;
+    let humanMoveSide: "white" | "black" | null = null;
 
-    const fenBeforeHuman = game.fen();
-    const humanMove = applyHumanTextMove(game, humanText);
+    if (game.turn() === humanColor) {
+      if (!humanText) {
+        return NextResponse.json(
+          { success: false, error: "Missing human message." },
+          { status: 400 },
+        );
+      }
 
-    if (!humanMove) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Could not parse that as a legal White move.",
+      const fenBeforeHuman = game.fen();
+      humanMove = applyHumanTextMove(game, humanText);
+      humanMoveSide = colorToSide(humanColor);
+
+      if (!humanMove) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Could not parse that as a legal ${colorLabel(humanColor)} move.`,
+          },
+          { status: 400 },
+        );
+      }
+
+      const fenAfterHuman = game.fen();
+      insertChatMessage({
+        gameId: id,
+        role: "human",
+        content: humanText,
+        structuredJson: {
+          side: humanMoveSide,
+          move: humanMove.lan,
+          from: humanMove.from,
+          to: humanMove.to,
+          san: humanMove.san,
+          promotion: humanMove.promotion ?? null,
         },
+        fenBefore: fenBeforeHuman,
+        fenAfter: fenAfterHuman,
+      });
+    } else if (game.turn() !== agentColor) {
+      return NextResponse.json(
+        { success: false, error: "It is not a playable turn for this match." },
         { status: 400 },
       );
     }
-
-    const fenAfterHuman = game.fen();
-    insertChatMessage({
-      gameId: id,
-      role: "human",
-      content: humanText,
-      structuredJson: {
-        side: "white",
-        move: humanMove.lan,
-        from: humanMove.from,
-        to: humanMove.to,
-        san: humanMove.san,
-        promotion: humanMove.promotion ?? null,
-      },
-      fenBefore: fenBeforeHuman,
-      fenAfter: fenAfterHuman,
-    });
 
     if (game.isGameOver()) {
       updateGameFen(id, game.fen(), gameStatus(game));
@@ -142,34 +181,44 @@ export async function POST(
           : message.content,
     }));
     const legalMoves = legalMovesForGame(game);
+    const legalMoveOptions = legalMoveOptionsForFeedback(legalMoves);
+    const invalidAttempts: string[] = [];
     let validationFeedback: string | undefined;
-    let agentMove = await getChessAgentMove({
-      side: "black",
-      opponent: "white",
-      boardView,
-      lastMove: `white: ${humanMove.lan}`,
-      chatHistory: agentChatHistory,
-    });
-    let legalMove = findMatchingLegalMove(legalMoves, agentMove);
+    let agentMove = null;
+    let legalMove = null;
 
-    for (let attempt = 0; !legalMove && attempt < 2; attempt += 1) {
-      validationFeedback = validationFeedbackForAgentMove(game, agentMove);
+    for (let attempt = 1; attempt <= MAX_AGENT_MOVE_ATTEMPTS; attempt += 1) {
       agentMove = await getChessAgentMove({
-        side: "black",
-        opponent: "white",
+        side: colorToSide(agentColor),
+        opponent: colorToSide(humanColor),
         boardView,
-        lastMove: `white: ${humanMove.lan}`,
+        lastMove: humanMove ? `${humanMoveSide}: ${humanMove.lan}` : null,
         chatHistory: agentChatHistory,
         validationFeedback,
-      });
+      }, body.agentProvider);
       legalMove = findMatchingLegalMove(legalMoves, agentMove);
+
+      if (legalMove) {
+        break;
+      }
+
+      invalidAttempts.push(
+        `${attempt}. ${agentMove.move} from ${agentMove.from} to ${agentMove.to} as ${agentMove.piece}`,
+      );
+      validationFeedback = [
+        validationFeedbackForAgentMove(game, agentMove, agentColor),
+        "Re-check the current board and output a new move.",
+        `You must choose exactly one move from this legal ${colorLabel(agentColor)} move list:`,
+        legalMoveOptions,
+        `Invalid attempts so far:\n${invalidAttempts.join("\n")}`,
+      ].join("\n\n");
     }
 
-    if (!legalMove) {
+    if (!legalMove || !agentMove) {
       insertChatMessage({
         gameId: id,
         role: "agent",
-        content: agentMove.comment,
+        content: agentMove?.comment ?? "The agent could not produce a legal move.",
         structuredJson: {
           ...agentMove,
           valid: false,
@@ -182,7 +231,7 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-          error: "Agent returned a structured but illegal move.",
+          error: "Agent could not repair its move after referee validation.",
           agentMove,
           fen: game.fen(),
           board: boardFromGame(game),
@@ -202,7 +251,7 @@ export async function POST(
     const fenAfterAgent = game.fen();
     const structuredAgentMove = {
       ...agentMove,
-      side: "black" as const,
+      side: colorToSide(agentColor),
       move: legalMove.move,
       from: legalMove.from,
       to: legalMove.to,
@@ -225,13 +274,15 @@ export async function POST(
     return NextResponse.json({
       success: true,
       gameId: id,
-      humanMove: {
-        from: humanMove.from,
-        to: humanMove.to,
-        san: humanMove.san,
-        lan: humanMove.lan,
-        promotion: humanMove.promotion,
-      },
+      humanMove: humanMove
+        ? {
+            from: humanMove.from,
+            to: humanMove.to,
+            san: humanMove.san,
+            lan: humanMove.lan,
+            promotion: humanMove.promotion,
+          }
+        : null,
       agentMove: structuredAgentMove,
       fen: game.fen(),
       board: boardFromGame(game),

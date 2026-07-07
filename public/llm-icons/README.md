@@ -6,7 +6,7 @@ Vendored SVG marks used by the model-opponent strip in the landing page.
   Source: https://github.com/lobehub/lobe-icons
   License: MIT
 
-- `claude.svg`, `gemini.svg`, `meta.svg`, and `mistral.svg` are adapted from `simple-icons` v16.25.0.
+- `claude.svg` and `gemini.svg` are adapted from `simple-icons` v16.25.0.
   Source: https://github.com/simple-icons/simple-icons
   License: CC0-1.0
 

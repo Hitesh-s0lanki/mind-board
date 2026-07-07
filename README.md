@@ -9,7 +9,7 @@ MindBoard Arena is a Next.js chess arena where a human player can challenge an L
 - Game pages with shareable ids at `/game/[id]`.
 - API routes for loading game state and advancing turns.
 - SQLite-backed game/message persistence using Node's built-in SQLite support.
-- LangChain/OpenAI chess agent with structured move output.
+- LangChain chess agent with structured move output across OpenAI, Gemini, Claude, and Qwen.
 - Optional Python LangChain CLI entrypoint for quick agent experiments.
 
 ## Tech Stack
@@ -18,7 +18,7 @@ MindBoard Arena is a Next.js chess arena where a human player can challenge an L
 - React 19
 - TypeScript
 - Tailwind CSS 4
-- LangChain and `@langchain/openai`
+- LangChain and chat model provider packages
 - `chess.js`
 - Python 3.13 helper entrypoint with `uv`
 
@@ -36,7 +36,7 @@ Create a local environment file:
 cp .env.example .env.local
 ```
 
-Then add your OpenAI API key to `.env.local`.
+Then add API credentials for the model provider you want to play against.
 
 Run the development server:
 
@@ -73,8 +73,12 @@ ai/                              Optional Python LangChain CLI agent
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | Yes for LLM moves | OpenAI API key used by the chess agent. |
-| `CHESS_AGENT_MODEL` | No | Model for the Next.js chess agent. Defaults to `gpt-4o-mini`. |
+| `OPENAI_API_KEY` | Yes for OpenAI moves | OpenAI API key used by the chess agent. |
+| `OPENAI_AGENT_MODEL` | No | OpenAI model for the Next.js chess agent. Defaults to `gpt-4o-mini`. |
+| `QWEN_AGENT_MODEL` | No | Qwen model served by Modal. Defaults to `Qwen/Qwen3.6-35B-A3B`. |
+| `MODAL_ENDPOINT_URL` | Yes for Qwen moves | Modal endpoint base URL, with or without `/v1`. |
+| `MODAL_PROXY_TOKEN_ID` | Yes for Qwen moves | Modal proxy token id sent as `Modal-Key`. |
+| `MODAL_PROXY_TOKEN_SECRET` | Yes for Qwen moves | Modal proxy token secret sent as `Modal-Secret`. |
 | `MIND_BOARD_AGENT_MODEL` | No | Model for the optional Python CLI agent. Defaults to `openai:gpt-4.1-mini`. |
 
 Do not commit `.env`, `.env.local`, API keys, or generated game logs.
