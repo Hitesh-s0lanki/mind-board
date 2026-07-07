@@ -86,7 +86,7 @@ function modalBaseURL(endpointURL: string) {
   return `${endpoint}/v1`;
 }
 
-function createModel(agentProvider?: string) {
+function createModel(agentProvider?: string, options: { apiKey?: string } = {}) {
   const provider = getProvider(agentProvider);
   const model = getProviderModel(provider);
 
@@ -106,10 +106,10 @@ function createModel(agentProvider?: string) {
   }
 
   if (provider === "claude") {
-    const apiKey = getEnvValue("ANTHROPIC_API_KEY", "CLAUDE_API_KEY");
+    const apiKey = options.apiKey?.trim();
     if (!apiKey) {
       throw new Error(
-        "ANTHROPIC_API_KEY or CLAUDE_API_KEY is missing. Add it to .env.local or .env.",
+        "Claude API key is required for this game. It is only used for the current match and is not saved.",
       );
     }
 
@@ -161,9 +161,10 @@ function createModel(agentProvider?: string) {
 export async function getChessAgentMove(
   input: ChessAgentInput,
   agentProvider?: string,
+  options: { apiKey?: string } = {},
 ): Promise<ChessAgentOutput> {
   const agent = createAgent({
-    model: createModel(agentProvider),
+    model: createModel(agentProvider, options),
     tools: [],
     systemPrompt: getChessSystemPrompt(),
     responseFormat: toolStrategy(ChessAgentOutputSchema, {

@@ -1,13 +1,19 @@
-import { mkdirSync } from "node:fs";
-import path from "node:path";
 import { Chess } from "chess.js";
-import { DatabaseSync } from "node:sqlite";
+import { and, desc, eq } from "drizzle-orm";
+import { getDb } from "@/db/client";
+import { appUsers, chatMessages, games } from "@/db/schema";
 
 export type GameRecord = {
   id: string;
+  sessionId: string | null;
   fen: string;
   whiteName: string;
   blackName: string;
+  gameMode: string;
+  humanSide: string | null;
+  agentProvider: string | null;
+  whiteAgentProvider: string | null;
+  blackAgentProvider: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -26,132 +32,243 @@ export type ChatMessageRecord = {
   createdAt: string;
 };
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "mind-board.sqlite");
+export type StoredMoveInput = {
+  from: string;
+  to: string;
+  promotion?: string;
+};
 
-let db: DatabaseSync | null = null;
-
-function getDb() {
-  if (db) {
-    return db;
-  }
-
-  mkdirSync(DATA_DIR, { recursive: true });
-  db = new DatabaseSync(DB_PATH);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS games (
-      id TEXT PRIMARY KEY,
-      fen TEXT NOT NULL,
-      white_name TEXT NOT NULL,
-      black_name TEXT NOT NULL,
-      status TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS chat_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      game_id TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('human', 'agent')),
-      content TEXT NOT NULL,
-      structured_json TEXT,
-      fen_before TEXT,
-      fen_after TEXT,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (game_id) REFERENCES games(id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_chat_messages_game_id_id
-      ON chat_messages(game_id, id);
-  `);
-
-  return db;
-}
+type GameRow = typeof games.$inferSelect;
+type ChatMessageRow = typeof chatMessages.$inferSelect;
 
 function now() {
   return new Date().toISOString();
 }
 
-function mapGame(row: Record<string, unknown>): GameRecord {
+function cleanName(value: string | undefined, fallback: string) {
+  return value?.trim().slice(0, 18) || fallback;
+}
+
+function mapGame(row: GameRow): GameRecord {
   return {
-    id: String(row.id),
-    fen: String(row.fen),
-    whiteName: String(row.white_name),
-    blackName: String(row.black_name),
-    status: String(row.status),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
+    id: row.id,
+    sessionId: row.sessionId,
+    fen: row.fen,
+    whiteName: row.whiteName,
+    blackName: row.blackName,
+    gameMode: row.gameMode,
+    humanSide: row.humanSide,
+    agentProvider: row.agentProvider,
+    whiteAgentProvider: row.whiteAgentProvider,
+    blackAgentProvider: row.blackAgentProvider,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
-function mapChatMessage(row: Record<string, unknown>): ChatMessageRecord {
+function mapChatMessage(row: ChatMessageRow): ChatMessageRecord {
   return {
-    id: Number(row.id),
-    gameId: String(row.game_id),
+    id: row.id,
+    gameId: row.gameId,
     role: row.role === "agent" ? "agent" : "human",
-    content: String(row.content),
-    structuredJson:
-      typeof row.structured_json === "string" ? row.structured_json : null,
-    fenBefore: typeof row.fen_before === "string" ? row.fen_before : null,
-    fenAfter: typeof row.fen_after === "string" ? row.fen_after : null,
-    createdAt: String(row.created_at),
+    content: row.content,
+    structuredJson: row.structuredJson,
+    fenBefore: row.fenBefore,
+    fenAfter: row.fenAfter,
+    createdAt: row.createdAt,
   };
 }
 
-export function getGame(id: string): GameRecord | null {
-  const row = getDb()
-    .prepare("SELECT * FROM games WHERE id = ?")
-    .get(id) as Record<string, unknown> | undefined;
+function parseStructuredJson(value: string | null) {
+  if (!value) {
+    return null;
+  }
 
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function moveInputFromMessage(message: ChatMessageRecord): StoredMoveInput | null {
+  const structuredJson = parseStructuredJson(message.structuredJson);
+
+  if (!structuredJson || structuredJson.valid === false) {
+    return null;
+  }
+
+  if (
+    typeof structuredJson.from !== "string" ||
+    typeof structuredJson.to !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    from: structuredJson.from,
+    to: structuredJson.to,
+    promotion:
+      typeof structuredJson.promotion === "string"
+        ? structuredJson.promotion
+        : undefined,
+  };
+}
+
+export async function upsertAppUser(sessionId: string, name?: string) {
+  const displayName = cleanName(name, "Human Challenger");
+
+  await getDb()
+    .insert(appUsers)
+    .values({
+      sessionId,
+      name: displayName,
+      updatedAt: now(),
+    })
+    .onConflictDoUpdate({
+      target: appUsers.sessionId,
+      set: {
+        ...(name?.trim() ? { name: displayName } : {}),
+        updatedAt: now(),
+      },
+    });
+}
+
+export async function getGame(id: string): Promise<GameRecord | null> {
+  const [row] = await getDb().select().from(games).where(eq(games.id, id)).limit(1);
   return row ? mapGame(row) : null;
 }
 
-export function getOrCreateGame(
+export async function getOrCreateGame(
   id: string,
-  options: { whiteName?: string; blackName?: string } = {},
+  options: {
+    whiteName?: string;
+    blackName?: string;
+    sessionId?: string | null;
+    gameMode?: "human-vs-agent" | "agent-vs-agent" | "human-vs-human";
+    humanSide?: "white" | "black";
+    agentProvider?: string;
+    whiteAgentProvider?: string;
+    blackAgentProvider?: string;
+  } = {},
 ) {
-  const existing = getGame(id);
-  if (existing) {
-    return existing;
+  if (options.sessionId) {
+    await upsertAppUser(
+      options.sessionId,
+      options.humanSide === "black" ? options.blackName : options.whiteName,
+    );
   }
 
-  const timestamp = now();
-  const game = {
-    id,
-    fen: new Chess().fen(),
-    whiteName: options.whiteName?.trim() || "PLAYER-1",
-    blackName: options.blackName?.trim() || "MindBoard AI",
-    status: "active",
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
+  const existing = await getGame(id);
 
-  getDb()
-    .prepare(
-      `INSERT INTO games
-        (id, fen, white_name, black_name, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      game.id,
-      game.fen,
-      game.whiteName,
-      game.blackName,
-      game.status,
-      game.createdAt,
-      game.updatedAt,
+  if (existing) {
+    const updates: Partial<typeof games.$inferInsert> = {};
+    const whiteName = options.whiteName?.trim()
+      ? cleanName(options.whiteName, existing.whiteName)
+      : undefined;
+    const blackName = options.blackName?.trim()
+      ? cleanName(options.blackName, existing.blackName)
+      : undefined;
+
+    if (options.sessionId && existing.sessionId !== options.sessionId) {
+      updates.sessionId = options.sessionId;
+    }
+
+    if (options.gameMode && existing.gameMode !== options.gameMode) {
+      updates.gameMode = options.gameMode;
+    }
+
+    if (options.humanSide && existing.humanSide !== options.humanSide) {
+      updates.humanSide = options.humanSide;
+    }
+
+    if (
+      options.agentProvider &&
+      existing.agentProvider !== options.agentProvider
+    ) {
+      updates.agentProvider = options.agentProvider;
+    }
+
+    if (
+      options.whiteAgentProvider &&
+      existing.whiteAgentProvider !== options.whiteAgentProvider
+    ) {
+      updates.whiteAgentProvider = options.whiteAgentProvider;
+    }
+
+    if (
+      options.blackAgentProvider &&
+      existing.blackAgentProvider !== options.blackAgentProvider
+    ) {
+      updates.blackAgentProvider = options.blackAgentProvider;
+    }
+
+    if (whiteName && existing.whiteName !== whiteName) {
+      updates.whiteName = whiteName;
+    }
+
+    if (blackName && existing.blackName !== blackName) {
+      updates.blackName = blackName;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return existing;
+    }
+
+    const [updated] = await getDb()
+      .update(games)
+      .set({ ...updates, updatedAt: now() })
+      .where(eq(games.id, id))
+      .returning();
+
+    return mapGame(updated);
+  }
+
+  const [game] = await getDb()
+    .insert(games)
+    .values({
+      id,
+      sessionId: options.sessionId ?? null,
+      fen: new Chess().fen(),
+      whiteName: cleanName(options.whiteName, "PLAYER-1"),
+      blackName: cleanName(options.blackName, "MindBoard AI"),
+      gameMode: options.gameMode ?? "human-vs-agent",
+      humanSide: options.humanSide ?? null,
+      agentProvider: options.agentProvider ?? null,
+      whiteAgentProvider: options.whiteAgentProvider ?? null,
+      blackAgentProvider: options.blackAgentProvider ?? null,
+      status: "active",
+      updatedAt: now(),
+    })
+    .returning();
+
+  return mapGame(game);
+}
+
+export async function updateGameFen(id: string, fen: string, status = "active") {
+  await getDb()
+    .update(games)
+    .set({ fen, status, updatedAt: now() })
+    .where(eq(games.id, id));
+}
+
+export async function updateGameStatus(
+  id: string,
+  status: "active" | "complete" | "ended",
+  sessionId?: string | null,
+) {
+  await getDb()
+    .update(games)
+    .set({ status, updatedAt: now() })
+    .where(
+      sessionId
+        ? and(eq(games.id, id), eq(games.sessionId, sessionId))
+        : eq(games.id, id),
     );
-
-  return game;
 }
 
-export function updateGameFen(id: string, fen: string, status = "active") {
-  getDb()
-    .prepare("UPDATE games SET fen = ?, status = ?, updated_at = ? WHERE id = ?")
-    .run(fen, status, now(), id);
-}
-
-export function insertChatMessage(input: {
+export async function insertChatMessage(input: {
   gameId: string;
   role: ChatRole;
   content: string;
@@ -159,48 +276,55 @@ export function insertChatMessage(input: {
   fenBefore?: string | null;
   fenAfter?: string | null;
 }) {
-  getDb()
-    .prepare(
-      `INSERT INTO chat_messages
-        (game_id, role, content, structured_json, fen_before, fen_after, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      input.gameId,
-      input.role,
-      input.content,
+  await getDb().insert(chatMessages).values({
+    gameId: input.gameId,
+    role: input.role,
+    content: input.content,
+    structuredJson:
       input.structuredJson === undefined
         ? null
         : JSON.stringify(input.structuredJson),
-      input.fenBefore ?? null,
-      input.fenAfter ?? null,
-      now(),
-    );
+    fenBefore: input.fenBefore ?? null,
+    fenAfter: input.fenAfter ?? null,
+  });
 }
 
-export function getRecentChatMessages(gameId: string, limit = 10) {
-  const rows = getDb()
-    .prepare(
-      `SELECT *
-       FROM chat_messages
-       WHERE game_id = ?
-       ORDER BY id DESC
-       LIMIT ?`,
-    )
-    .all(gameId, limit) as Record<string, unknown>[];
+export async function getRecentChatMessages(gameId: string, limit = 10) {
+  const rows = await getDb()
+    .select()
+    .from(chatMessages)
+    .where(eq(chatMessages.gameId, gameId))
+    .orderBy(desc(chatMessages.id))
+    .limit(limit);
 
   return rows.map(mapChatMessage).reverse();
 }
 
-export function getAllChatMessages(gameId: string) {
-  const rows = getDb()
-    .prepare(
-      `SELECT *
-       FROM chat_messages
-       WHERE game_id = ?
-       ORDER BY id ASC`,
-    )
-    .all(gameId) as Record<string, unknown>[];
+export async function getAllChatMessages(gameId: string) {
+  const rows = await getDb()
+    .select()
+    .from(chatMessages)
+    .where(eq(chatMessages.gameId, gameId))
+    .orderBy(chatMessages.id);
 
   return rows.map(mapChatMessage);
+}
+
+export async function getGameMoveInputs(gameId: string) {
+  const messages = await getAllChatMessages(gameId);
+  return messages.flatMap((message) => {
+    const moveInput = moveInputFromMessage(message);
+    return moveInput ? [moveInput] : [];
+  });
+}
+
+export async function getGamesForSession(sessionId: string, limit = 12) {
+  const rows = await getDb()
+    .select()
+    .from(games)
+    .where(eq(games.sessionId, sessionId))
+    .orderBy(desc(games.updatedAt))
+    .limit(limit);
+
+  return rows.map(mapGame);
 }

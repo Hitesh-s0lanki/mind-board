@@ -50,7 +50,7 @@ export function GameHeader({
           size="default"
           type="button"
           onClick={onResetGame}
-          className="bg-[#e07a5f] px-3 font-semibold text-[#101513] hover:bg-[#f09a83] focus-visible:ring-[#e07a5f]"
+          className="bg-[#e07a5f] font-semibold text-[#101513] hover:bg-[#f09a83] focus-visible:ring-[#e07a5f]"
         >
           End game
         </Button>
